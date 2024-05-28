@@ -32,14 +32,45 @@ extern "C" {
 #define UNIT_VMETER_ADDR      0x48
 
 /** 
- * @brief Initialize the unit.
+ * @brief Get the latest converted reading from the VMeter.
+ * If the reading is not ready, the function will return 
+ * ESP_ERR_NOT_FINISHED. You will need to retry reading until
+ * a measurement is ready.
  * 
- * @param mode Continuous = 0, Single-Shot = 1.
+ * @param millivolts Reading results in millivolts.
+ * @return [esp_err_t](https://docs.espressif.com/projects/esp-idf/en/release-v4.3/esp32/api-reference/system/esp_err.html#macros).
+ *  - ESP_OK                : Success
+ *  - ESP_ERR_NOT_FINISHED	: Measurement has not finished yet
+ */
+esp_err_t unit_vmeter_reading_get( int16_t *millivolts );
+
+/** 
+ * @brief Set the reading mode of the V-Meter unit.
+ * Single shot mode is a single reading. Takes a sample reading, then 
+ * powers down.
+ * 
+ * Continuous mode continues to take reading after reading.
+ * 
+ * @param mode Single-Shot = 0, Continuous = 1.
  * @return [esp_err_t](https://docs.espressif.com/projects/esp-idf/en/release-v4.3/esp32/api-reference/system/esp_err.html#macros).
  *  - ESP_OK                : Success
  *  - ESP_ERR_INVALID_ARG	: Driver parameter error
  */
-esp_err_t unit_vmeter_init( bool mode );
+esp_err_t unit_vmeter_mode_set( ads111x_mode_t mode );
+
+/** 
+ * @brief Initialize the unit.
+ * Single shot mode is a single reading. Takes a sample reading, then 
+ * powers down.
+ * 
+ * Continuous mode continues to take reading after reading.
+ * 
+ * @param mode Single-Shot = 0, Continuous = 1.
+ * @return [esp_err_t](https://docs.espressif.com/projects/esp-idf/en/release-v4.3/esp32/api-reference/system/esp_err.html#macros).
+ *  - ESP_OK                : Success
+ *  - ESP_ERR_INVALID_ARG	: Driver parameter error
+ */
+esp_err_t unit_vmeter_init( ads111x_mode_t mode );
 
 #ifdef __cplusplus
 }
