@@ -23,18 +23,18 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <esp_log.h>
-#include "ads111x.h"
 #include "core2foraws.h"
-#include "unit_v_meter.h"
+#include "unit_vmeter.h"
 
 #define UNIT_VMETER_DATA_RATE    ADS111X_DATA_RATE_128
 #define UNIT_VMETER_MUX          ADS111X_MUX_0_GND
+#define UNIT_VMETER_GAIN         ADS111X_GAIN_4V096
 
 static const char *_TAG = "UNIT_VMETER";
-static const float _gain_val = ads111x_gain_values[ ADS111X_GAIN_4V096 ];
-static const i2c_dev_t _dev;
+static float _gain_val;
+static i2c_dev_t _dev;
 
-esp_err_t unit_vmeter_reading_get( int16_t *millivolts )
+esp_err_t unit_vmeter_reading_get( float *millivolts )
 {
     esp_err_t err = ESP_OK;
 
@@ -52,7 +52,7 @@ esp_err_t unit_vmeter_reading_get( int16_t *millivolts )
         if ( err == ESP_OK )
         {
             ESP_LOGD( _TAG, "Read ADS1115 raw value: %d", raw_volts );
-            millivolts = _gain_val / ADS111X_MAX_VALUE * raw;
+            *millivolts = _gain_val / ADS111X_MAX_VALUE * raw_volts;
         }
     }
 
@@ -60,7 +60,7 @@ esp_err_t unit_vmeter_reading_get( int16_t *millivolts )
 
 }
 
-esp_err_t unit_vmeter_mode_set( ads111x_mode_t mode )
+esp_err_t unit_vmeter_mode_set( unit_vmeter_mode_t mode )
 {
     esp_err_t err = ESP_OK;
     ads111x_set_mode( &_dev, ADS111X_MODE_CONTINUOUS );
@@ -69,9 +69,11 @@ esp_err_t unit_vmeter_mode_set( ads111x_mode_t mode )
     return err;
 }
 
-esp_err_t unit_vmeter_init( ads111x_mode_t mode )
+esp_err_t unit_vmeter_init( unit_vmeter_mode_t mode )
 {
     esp_err_t err = ESP_OK;
+
+    _gain_val = ads111x_gain_values[ UNIT_VMETER_GAIN ];
 
     memset( &_dev, 0, sizeof( i2c_dev_t ) );
     ads111x_init_desc( &_dev, UNIT_VMETER_ADDR, COMMON_I2C_EXTERNAL, PORT_A_SDA_PIN, PORT_A_SCL_PIN );
