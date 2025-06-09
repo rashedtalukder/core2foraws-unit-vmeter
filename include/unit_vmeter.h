@@ -1,4 +1,31 @@
+/*!
+ * @brief Library for the VMeter (ADS1115) Unit by M5Stack on the Core2 for AWS
+ * 
+ * @copyright Copyright (c) 2025 by Rashed Talukder[https://rashedtalukder.com]
+ * 
+ * @license SPDX-License-Identifier: Apache 2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * 
+ * @Links [VMeter](https://docs.m5stack.com/en/unit/vmeter)
+ * 
+ * @version  V0.0.1
+ * @date  2025-06-09
+ */
+
 #pragma once
+
+#ifndef _UNIT_VMETER_H_
+#define _UNIT_VMETER_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,7 +44,8 @@ extern "C" {
 #define ADS1115_REG_CONFIG          0x01
 
 // Gain settings (PGA)
-typedef enum {
+typedef enum
+{
     UNIT_VMETER_GAIN_6144MV = 0x00,    // ±6.144V range
     UNIT_VMETER_GAIN_4096MV = 0x01,    // ±4.096V range
     UNIT_VMETER_GAIN_2048MV = 0x02,    // ±2.048V range (default)
@@ -27,7 +55,8 @@ typedef enum {
 } unit_vmeter_gain_t;
 
 // Data rate settings
-typedef enum {
+typedef enum
+{
     UNIT_VMETER_RATE_8SPS   = 0x00,    // 8 samples per second
     UNIT_VMETER_RATE_16SPS  = 0x01,    // 16 samples per second
     UNIT_VMETER_RATE_32SPS  = 0x02,    // 32 samples per second
@@ -39,13 +68,15 @@ typedef enum {
 } unit_vmeter_rate_t;
 
 // Operating mode
-typedef enum {
+typedef enum
+{
     UNIT_VMETER_MODE_CONTINUOUS = 0x00, // Continuous conversion mode
     UNIT_VMETER_MODE_SINGLESHOT = 0x01  // Single-shot conversion mode
 } unit_vmeter_mode_t;
 
 // Configuration structure
-typedef struct {
+typedef struct
+{
     unit_vmeter_gain_t gain;
     unit_vmeter_rate_t rate;
     unit_vmeter_mode_t mode;
@@ -59,7 +90,7 @@ typedef struct {
  * @param mode Operating mode (SINGLESHOT or CONTINUOUS)
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t unit_vmeter_init(unit_vmeter_mode_t mode);
+esp_err_t unit_vmeter_init( unit_vmeter_mode_t mode );
 
 /**
  * @brief Set the gain (voltage range) for measurements
@@ -67,7 +98,7 @@ esp_err_t unit_vmeter_init(unit_vmeter_mode_t mode);
  * @param gain Gain setting
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t unit_vmeter_set_gain(unit_vmeter_gain_t gain);
+esp_err_t unit_vmeter_set_gain( unit_vmeter_gain_t gain );
 
 /**
  * @brief Set the data rate for measurements
@@ -75,7 +106,7 @@ esp_err_t unit_vmeter_set_gain(unit_vmeter_gain_t gain);
  * @param rate Data rate setting
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t unit_vmeter_set_rate(unit_vmeter_rate_t rate);
+esp_err_t unit_vmeter_set_rate( unit_vmeter_rate_t rate );
 
 /**
  * @brief Set the operating mode
@@ -83,7 +114,7 @@ esp_err_t unit_vmeter_set_rate(unit_vmeter_rate_t rate);
  * @param mode Operating mode
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t unit_vmeter_set_mode(unit_vmeter_mode_t mode);
+esp_err_t unit_vmeter_set_mode( unit_vmeter_mode_t mode );
 
 /**
  * @brief Get voltage reading
@@ -91,7 +122,7 @@ esp_err_t unit_vmeter_set_mode(unit_vmeter_mode_t mode);
  * @param voltage Pointer to store voltage reading in millivolts
  * @return esp_err_t ESP_OK on success, ESP_ERR_NOT_FINISHED if conversion not ready
  */
-esp_err_t unit_vmeter_reading_get(float *voltage);
+esp_err_t unit_vmeter_reading_get( float *voltage );
 
 /**
  * @brief Get raw ADC reading
@@ -99,29 +130,31 @@ esp_err_t unit_vmeter_reading_get(float *voltage);
  * @param raw_value Pointer to store raw ADC value
  * @return esp_err_t ESP_OK on success, ESP_ERR_NOT_FINISHED if conversion not ready
  */
-esp_err_t unit_vmeter_raw_reading_get(int16_t *raw_value);
+esp_err_t unit_vmeter_raw_reading_get( int16_t *raw_value );
 
 /**
  * @brief Check if conversion is in progress
  * 
  * @return true if conversion is in progress, false if ready
  */
-bool unit_vmeter_is_converting(void);
+bool unit_vmeter_is_converting( void );
 
 /**
  * @brief Start a single conversion (only applicable in single-shot mode)
  * 
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t unit_vmeter_start_conversion(void);
+esp_err_t unit_vmeter_start_conversion( void );
 
 /**
  * @brief Load calibration data from EEPROM
  * 
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t unit_vmeter_load_calibration(void);
+esp_err_t unit_vmeter_load_calibration( void );
 
 #ifdef __cplusplus
 }
+#endif
+
 #endif
