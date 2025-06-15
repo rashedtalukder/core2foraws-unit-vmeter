@@ -21,17 +21,18 @@ This is a component library for use with the M5Stack VMeter unit on the Core2 fo
 
 void app_main() {
     core2foraws_init();
-    
+    core2foraws_expports_i2c_begin();
+
     // Initialize in single-shot mode
     unit_vmeter_init(UNIT_VMETER_MODE_SINGLESHOT);
-    
+
     float voltage;
-    
+
     while( 1 )
     {
         // Start conversion
         unit_vmeter_start_conversion();
-        
+
         // Wait for conversion and read result
         esp_err_t err;
         do
@@ -40,12 +41,12 @@ void app_main() {
             err = unit_vmeter_reading_get( &voltage );
         }
         while ( err == ESP_ERR_NOT_FINISHED );
-        
+
         if ( err == ESP_OK )
         {
             printf( "Voltage: %.2f mV\n", voltage );
         }
-        
+
         vTaskDelay( pdMS_TO_TICKS( 1000 ) );
     }
 }
@@ -60,22 +61,23 @@ void app_main() {
 void app_main()
 {
     core2foraws_init();
-    
+    core2foraws_expports_i2c_begin();
+
     // Initialize in continuous mode
     unit_vmeter_init( UNIT_VMETER_MODE_CONTINUOUS );
-    
+
     float voltage;
-    
+
     while( 1 )
     {
         // Read current voltage (no start conversion needed)
         esp_err_t err = unit_vmeter_reading_get( &voltage );
-        
+
         if ( err == ESP_OK )
         {
             printf( "Voltage: %.2f mV\n", voltage );
         }
-        
+
         vTaskDelay( pdMS_TO_TICKS( 100 ) );
     }
 }
@@ -90,25 +92,25 @@ void app_main()
 void app_main()
 {
     core2foraws_init();
-    
+
     // Initialize with default settings
     unit_vmeter_init( UNIT_VMETER_MODE_SINGLESHOT );
-    
+
     // Configure for high voltage measurements (±4.096V range)
     unit_vmeter_set_gain( UNIT_VMETER_GAIN_4096MV );
-    
+
     // Set high sample rate
     unit_vmeter_set_rate( UNIT_VMETER_RATE_860SPS );
-    
+
     // Reload calibration for new gain setting
     unit_vmeter_load_calibration();
-    
+
     float voltage;
-    
+
     while( 1 )
     {
         unit_vmeter_start_conversion();
-        
+
         // Wait for conversion
         esp_err_t err;
         do
@@ -117,12 +119,12 @@ void app_main()
             err = unit_vmeter_reading_get( &voltage );
         }
         while ( err == ESP_ERR_NOT_FINISHED );
-        
+
         if ( err == ESP_OK )
         {
             printf( "High-range voltage: %.2f mV\n", voltage );
         }
-        
+
         vTaskDelay( pdMS_TO_TICKS( 500 ) );
     }
 }
@@ -131,32 +133,36 @@ void app_main()
 ## API Reference
 
 ### Initialization
+
 - `unit_vmeter_init( mode )` - Initialize the VMeter with specified mode
 
 ### Configuration
+
 - `unit_vmeter_set_gain( gain )` - Set voltage range
 - `unit_vmeter_set_rate( rate )` - Set sampling rate
 - `unit_vmeter_set_mode( mode )` - Set operating mode
 
 ### Measurements
+
 - `unit_vmeter_reading_get( voltage )` - Get calibrated voltage reading
 - `unit_vmeter_raw_reading_get( raw_value )` - Get raw ADC value
 - `unit_vmeter_is_converting()` - Check if conversion is in progress
 - `unit_vmeter_start_conversion()` - Start single conversion (single-shot mode only)
 
 ### Calibration
+
 - `unit_vmeter_load_calibration()` - Reload calibration from EEPROM
 
 ## Voltage Ranges
 
-| Gain Setting | Voltage Range | Resolution |
-|--------------|---------------|------------|
-| UNIT_VMETER_GAIN_6144MV | ±6.144V | 0.1875 mV |
-| UNIT_VMETER_GAIN_4096MV | ±4.096V | 0.125 mV |
-| UNIT_VMETER_GAIN_2048MV | ±2.048V | 0.0625 mV |
-| UNIT_VMETER_GAIN_1024MV | ±1.024V | 0.03125 mV |
-| UNIT_VMETER_GAIN_512MV  | ±0.512V | 0.015625 mV |
-| UNIT_VMETER_GAIN_256MV  | ±0.256V | 0.007813 mV |
+| Gain Setting            | Voltage Range | Resolution  |
+| ----------------------- | ------------- | ----------- |
+| UNIT_VMETER_GAIN_6144MV | ±6.144V       | 0.1875 mV   |
+| UNIT_VMETER_GAIN_4096MV | ±4.096V       | 0.125 mV    |
+| UNIT_VMETER_GAIN_2048MV | ±2.048V       | 0.0625 mV   |
+| UNIT_VMETER_GAIN_1024MV | ±1.024V       | 0.03125 mV  |
+| UNIT_VMETER_GAIN_512MV  | ±0.512V       | 0.015625 mV |
+| UNIT_VMETER_GAIN_256MV  | ±0.256V       | 0.007813 mV |
 
 ## Notes
 
