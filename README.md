@@ -251,4 +251,4 @@ gain range wastes ADC dynamic range and reduces resolution unnecessarily.
 - The driver is **not thread-safe** — avoid calling driver functions from multiple tasks simultaneously. If you need concurrent access, add your own mutex around driver calls.
 - When using PA Hub, each VMeter unit must be configured with a unique channel number.
 - PA Hub channels 0-5 are available for connecting up to 6 VMeter units simultaneously.
-- The I2C bus must not exceed 1 MHz due to the CA-IS3020S isolator on the VMeter board. The Core2 for AWS BSP configures the external I2C bus at 400 kHz (fast mode), which is within this limit.
+- The I2C bus must not exceed 1 MHz due to the CA-IS3020S isolator on the VMeter board. The driver initializes both the ADS1115 and EEPROM at 100 kHz (standard mode), which is within this limit.
