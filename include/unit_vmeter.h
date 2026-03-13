@@ -40,9 +40,28 @@ extern "C"
 #define UNIT_VMETER_ADS1115_ADDR 0x49
 #define UNIT_VMETER_EEPROM_ADDR  0x53
 
-// ADS1115 register addresses
+// ADS1115 register addresses (pointer register values)
 #define ADS1115_REG_CONVERSION 0x00
 #define ADS1115_REG_CONFIG     0x01
+#define ADS1115_REG_LO_THRESH  0x02
+#define ADS1115_REG_HI_THRESH  0x03
+
+// ADS1115 config register bit masks and shifts
+#define ADS1115_CONFIG_OS_BIT       0x8000  // Bit 15: start conversion / status
+#define ADS1115_CONFIG_MUX_MASK     0x7000  // Bits 14:12: input mux
+#define ADS1115_CONFIG_MUX_SHIFT    12
+#define ADS1115_CONFIG_PGA_MASK     0x0E00  // Bits 11:9: gain (PGA)
+#define ADS1115_CONFIG_PGA_SHIFT    9
+#define ADS1115_CONFIG_MODE_MASK    0x0100  // Bit 8: operating mode
+#define ADS1115_CONFIG_MODE_SHIFT   8
+#define ADS1115_CONFIG_DR_MASK      0x00E0  // Bits 7:5: data rate
+#define ADS1115_CONFIG_DR_SHIFT     5
+#define ADS1115_CONFIG_COMP_QUE_MASK 0x0003 // Bits 1:0: comparator queue
+
+// Number of valid gain settings
+#define UNIT_VMETER_GAIN_COUNT 6
+// Number of valid data rate settings
+#define UNIT_VMETER_RATE_COUNT 8
 
   // Gain settings (PGA)
   typedef enum

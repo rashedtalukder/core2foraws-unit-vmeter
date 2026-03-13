@@ -1,0 +1,19 @@
+menu "Unit VMeter Configuration"
+
+    config UNIT_VMETER_USE_PAHUB
+        bool "Use PA Hub for VMeter Unit"
+        default n
+        help
+            Enable this option if the VMeter Unit is connected through a PA Hub.
+            When enabled, the unit will use PA Hub I2C communication instead of
+            direct Core2 expansion ports.
+
+    config UNIT_VMETER_PAHUB_CHANNEL
+        int "PA Hub Channel for VMeter Unit"
+        depends on UNIT_VMETER_USE_PAHUB
+        range 0 5
+        default 0
+        help
+            PA Hub channel number (0-5) where the VMeter Unit is connected.
+
+endmenu
