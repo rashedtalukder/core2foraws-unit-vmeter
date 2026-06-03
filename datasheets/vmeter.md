@@ -449,7 +449,11 @@ No standalone opcode set beyond normal I2C addressing and register/pointer acces
 
 In latching comparator mode, host may issue SMBus alert command `00011001` when ALERT/RDY is asserted; responding ADS1114/ADS1115 devices return their slave address. 
 
-## 9.3 EEPROM
+## 9.3 I2C General-Call Reset
+
+The ADS1115 responds to the I2C general call: address byte `0x00` (`0000000` + write bit) followed by data byte `0x06` (`00000110b`) triggers an internal reset, restoring all Config bits to defaults and entering power-down. This affects all reset-capable devices on the bus.
+
+## 9.4 EEPROM
 
 No command set is documented in the supplied materials.
 
@@ -564,7 +568,10 @@ The ADS111x settle within a single cycle, so conversion time equals `1 / DR`.
 
 * Internal oscillator: `1 MHz`
 * No external clock
-* Following power-up, conversion register remains `0x0000` until first conversion completes  
+* Following power-up, conversion register remains `0x0000` until first conversion completes
+* Wait approximately `50 µs` after VDD is stable before communicating, to allow the power-up reset process to complete
+* In single-shot mode, after `OS = 1` is written the device powers up in approximately `25 µs`, clears `OS` to `0`, then starts the conversion
+* If the I2C bus is held idle for more than `25 ms`, the bus times out  
 
 ## 11.4 CA-IS3020S Timing
 
@@ -637,7 +644,9 @@ After power-up, Conversion remains `0x0000` until first conversion completes.
 
 ## 13.2 Software Reset
 
-No dedicated software reset register or command is documented for ADS1115 in the provided material.
+The ADS1115 has no dedicated reset register, but it does respond to the I2C general-call reset. When the device receives the general-call address `0x00` followed by the second byte `0x06` (`00000110b`), it performs an internal reset as if power-cycled: all Config register bits return to their default settings and the device enters the power-down state. Firmware may use this to restore the ADS1115 to a known reset state without toggling power.
+
+Note: the general call resets every reset-capable device on the bus, not just the ADS1115; do not issue it if other shared peripherals must not be reset.
 
 ## 13.3 Module Reset
 
@@ -754,7 +763,7 @@ Because EEPROM layout is not published, step 2 and 3 require additional confirme
 Recommended startup sequence:
 
 1. Configure host I2C bus to `≤ 1 MHz`; `400 kHz` is a conservative default.
-2. Delay for module power stabilization as required by system policy.
+2. Wait at least `50 µs` after VDD is stable (per ADS1115 power-up reset timing) before communicating; add more margin per system policy.
 3. Probe ADC at `0x49`.
 4. Optionally read current ADS1115 Config register.
 5. Write known configuration:
