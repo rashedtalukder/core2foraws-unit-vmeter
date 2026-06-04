@@ -18,8 +18,8 @@
  *
  * @Links [VMeter](https://docs.m5stack.com/en/unit/vmeter)
  *
- * @version  V0.0.1
- * @date  2025-06-09
+ * @version  V0.0.2
+ * @date  2026-06-04
  */
 
 #pragma once
@@ -63,115 +63,170 @@ extern "C"
 // Number of valid data rate settings
 #define UNIT_VMETER_RATE_COUNT 8
 
-  // Gain settings (PGA)
+  /**
+   * @brief ADS1115 programmable gain amplifier (PGA) full-scale range.
+   *
+   * Selects the input voltage range; a smaller range gives finer resolution
+   * but clips larger inputs.
+   */
   typedef enum
   {
-    UNIT_VMETER_GAIN_6144MV = 0x00, // ±6.144V range
-    UNIT_VMETER_GAIN_4096MV = 0x01, // ±4.096V range
-    UNIT_VMETER_GAIN_2048MV = 0x02, // ±2.048V range (default)
-    UNIT_VMETER_GAIN_1024MV = 0x03, // ±1.024V range
-    UNIT_VMETER_GAIN_512MV = 0x04,  // ±0.512V range
-    UNIT_VMETER_GAIN_256MV = 0x05   // ±0.256V range
+    UNIT_VMETER_GAIN_6144MV = 0x00, /*!< +/-6.144 V range */
+    UNIT_VMETER_GAIN_4096MV = 0x01, /*!< +/-4.096 V range */
+    UNIT_VMETER_GAIN_2048MV = 0x02, /*!< +/-2.048 V range (default) */
+    UNIT_VMETER_GAIN_1024MV = 0x03, /*!< +/-1.024 V range */
+    UNIT_VMETER_GAIN_512MV = 0x04,  /*!< +/-0.512 V range */
+    UNIT_VMETER_GAIN_256MV = 0x05   /*!< +/-0.256 V range */
   } unit_vmeter_gain_t;
 
-  // Data rate settings
+  /**
+   * @brief ADS1115 conversion data rate in samples per second.
+   *
+   * Higher rates reduce conversion latency at the cost of more noise.
+   */
   typedef enum
   {
-    UNIT_VMETER_RATE_8SPS = 0x00,   // 8 samples per second
-    UNIT_VMETER_RATE_16SPS = 0x01,  // 16 samples per second
-    UNIT_VMETER_RATE_32SPS = 0x02,  // 32 samples per second
-    UNIT_VMETER_RATE_64SPS = 0x03,  // 64 samples per second
-    UNIT_VMETER_RATE_128SPS = 0x04, // 128 samples per second (default)
-    UNIT_VMETER_RATE_250SPS = 0x05, // 250 samples per second
-    UNIT_VMETER_RATE_475SPS = 0x06, // 475 samples per second
-    UNIT_VMETER_RATE_860SPS = 0x07  // 860 samples per second
+    UNIT_VMETER_RATE_8SPS = 0x00,   /*!< 8 samples per second */
+    UNIT_VMETER_RATE_16SPS = 0x01,  /*!< 16 samples per second */
+    UNIT_VMETER_RATE_32SPS = 0x02,  /*!< 32 samples per second */
+    UNIT_VMETER_RATE_64SPS = 0x03,  /*!< 64 samples per second */
+    UNIT_VMETER_RATE_128SPS = 0x04, /*!< 128 samples per second (default) */
+    UNIT_VMETER_RATE_250SPS = 0x05, /*!< 250 samples per second */
+    UNIT_VMETER_RATE_475SPS = 0x06, /*!< 475 samples per second */
+    UNIT_VMETER_RATE_860SPS = 0x07  /*!< 860 samples per second */
   } unit_vmeter_rate_t;
 
-  // Operating mode
+  /**
+   * @brief ADS1115 conversion mode.
+   */
   typedef enum
   {
-    UNIT_VMETER_MODE_CONTINUOUS = 0x00, // Continuous conversion mode
-    UNIT_VMETER_MODE_SINGLESHOT = 0x01  // Single-shot conversion mode
+    UNIT_VMETER_MODE_CONTINUOUS = 0x00, /*!< Continuous conversion */
+    UNIT_VMETER_MODE_SINGLESHOT = 0x01  /*!< Single-shot (power-down between) */
   } unit_vmeter_mode_t;
 
-  // Configuration structure
+  /**
+   * @brief Runtime VMeter configuration / state.
+   */
   typedef struct
   {
-    unit_vmeter_gain_t gain;
-    unit_vmeter_rate_t rate;
-    unit_vmeter_mode_t mode;
-    float calibration_factor;
-    bool calibration_loaded;
+    unit_vmeter_gain_t gain;   /*!< Active PGA full-scale range */
+    unit_vmeter_rate_t rate;   /*!< Active conversion data rate */
+    unit_vmeter_mode_t mode;   /*!< Active conversion mode */
+    float calibration_factor;  /*!< Multiplier applied to raw readings */
+    bool calibration_loaded;   /*!< true if EEPROM calibration was loaded */
   } unit_vmeter_config_t;
 
   /**
-   * @brief Initialize the VMeter unit
+   * @brief Initialize the VMeter (ADS1115) unit.
    *
-   * @param mode Operating mode (SINGLESHOT or CONTINUOUS)
-   * @return esp_err_t ESP_OK on success
+   * Registers the ADS1115 and EEPROM I2C devices, writes the initial ADS1115
+   * configuration, and attempts to load factory calibration (falling back to
+   * default calibration on failure). Calling again while already initialized
+   * returns ESP_OK.
+   *
+   * @param[in] mode Initial conversion mode (single-shot or continuous).
+   * @return
+   *  - ESP_OK              : Success (or already initialized)
+   *  - ESP_ERR_INVALID_ARG : Invalid mode value
+   *  - Other               : Error from PA Hub / I2C device add / config write
    */
   esp_err_t unit_vmeter_init( unit_vmeter_mode_t mode );
 
   /**
-   * @brief Set the gain (voltage range) for measurements
+   * @brief Set the PGA gain (input voltage range).
    *
-   * @param gain Gain setting
-   * @return esp_err_t ESP_OK on success
+   * Reloads the calibration factor for the new gain.
+   *
+   * @param[in] gain Gain setting.
+   * @return
+   *  - ESP_OK                : Success
+   *  - ESP_ERR_INVALID_STATE : Not initialized
+   *  - ESP_ERR_INVALID_ARG   : gain out of range
+   *  - Other                 : I2C read/write error
    */
   esp_err_t unit_vmeter_set_gain( unit_vmeter_gain_t gain );
 
   /**
-   * @brief Set the data rate for measurements
+   * @brief Set the conversion data rate.
    *
-   * @param rate Data rate setting
-   * @return esp_err_t ESP_OK on success
+   * @param[in] rate Data rate setting.
+   * @return
+   *  - ESP_OK                : Success
+   *  - ESP_ERR_INVALID_STATE : Not initialized
+   *  - ESP_ERR_INVALID_ARG   : rate out of range
+   *  - Other                 : I2C read/write error
    */
   esp_err_t unit_vmeter_set_rate( unit_vmeter_rate_t rate );
 
   /**
-   * @brief Set the operating mode
+   * @brief Set the conversion mode (single-shot or continuous).
    *
-   * @param mode Operating mode
-   * @return esp_err_t ESP_OK on success
+   * @param[in] mode Operating mode.
+   * @return
+   *  - ESP_OK                : Success
+   *  - ESP_ERR_INVALID_STATE : Not initialized
+   *  - ESP_ERR_INVALID_ARG   : Invalid mode value
+   *  - Other                 : I2C read/write error
    */
   esp_err_t unit_vmeter_set_mode( unit_vmeter_mode_t mode );
 
   /**
-   * @brief Get voltage reading
+   * @brief Get the latest calibrated voltage reading.
    *
-   * @param voltage Pointer to store voltage reading in millivolts
-   * @return esp_err_t ESP_OK on success, ESP_ERR_NOT_FINISHED if conversion not
-   * ready
+   * In single-shot mode the conversion must already be complete (see
+   * unit_vmeter_start_conversion() and unit_vmeter_is_converting()).
+   *
+   * @param[out] voltage Calibrated reading in millivolts. Must not be NULL.
+   * @return
+   *  - ESP_OK                : Success
+   *  - ESP_ERR_INVALID_ARG   : voltage is NULL
+   *  - ESP_ERR_INVALID_STATE : Not initialized
+   *  - ESP_ERR_NOT_FINISHED  : Single-shot conversion not yet complete
+   *  - Other                 : I2C read error
    */
   esp_err_t unit_vmeter_reading_get( float *voltage );
 
   /**
-   * @brief Get raw ADC reading
+   * @brief Get the latest raw (uncalibrated) ADC reading.
    *
-   * @param raw_value Pointer to store raw ADC value
-   * @return esp_err_t ESP_OK on success, ESP_ERR_NOT_FINISHED if conversion not
-   * ready
+   * @param[out] raw_value Signed 16-bit ADC value. Must not be NULL.
+   * @return
+   *  - ESP_OK                : Success
+   *  - ESP_ERR_INVALID_ARG   : raw_value is NULL
+   *  - ESP_ERR_INVALID_STATE : Not initialized
+   *  - ESP_ERR_NOT_FINISHED  : Single-shot conversion not yet complete
+   *  - Other                 : I2C read error
    */
   esp_err_t unit_vmeter_raw_reading_get( int16_t *raw_value );
 
   /**
-   * @brief Check if conversion is in progress
+   * @brief Check whether a conversion is currently in progress.
    *
-   * @return true if conversion is in progress, false if ready
+   * @return true if a conversion is in progress (or on read error / not
+   *         initialized), false if a result is ready.
    */
   bool unit_vmeter_is_converting( void );
 
   /**
-   * @brief Start a single conversion (only applicable in single-shot mode)
+   * @brief Start a single conversion (single-shot mode only).
    *
-   * @return esp_err_t ESP_OK on success
+   * @return
+   *  - ESP_OK                : Conversion started
+   *  - ESP_ERR_INVALID_STATE : Not initialized, or not in single-shot mode
+   *  - Other                 : I2C read/write error
    */
   esp_err_t unit_vmeter_start_conversion( void );
 
   /**
-   * @brief Load calibration data from EEPROM
+   * @brief (Re)load calibration data from the unit's EEPROM for the active
+   * gain.
    *
-   * @return esp_err_t ESP_OK on success
+   * @return
+   *  - ESP_OK                : Success
+   *  - ESP_ERR_INVALID_STATE : Not initialized
+   *  - ESP_ERR_INVALID_CRC   : EEPROM calibration checksum mismatch
+   *  - Other                 : I2C read error
    */
   esp_err_t unit_vmeter_load_calibration( void );
 

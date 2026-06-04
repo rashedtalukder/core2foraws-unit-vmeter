@@ -18,8 +18,8 @@
  *
  * @Links [VMeter](https://docs.m5stack.com/en/unit/vmeter)
  *
- * @version  V0.0.1
- * @date  2025-06-09
+ * @version  V0.0.2
+ * @date  2026-06-04
  */
 
 #include "unit_vmeter.h"
