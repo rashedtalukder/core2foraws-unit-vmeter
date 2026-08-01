@@ -1,5 +1,9 @@
 # Unit VMeter Firmware Driver Implementation Specification
 
+## Source Evidence and Precedence
+
+Verified on 2026-08-01 against the official [M5Stack Unit VMeter page](https://docs.m5stack.com/en/unit/vmeter), board schematic, checked-in TI `ADS1115-datasheet.pdf` (SHA-256 `62661b1409e83995a9f696305aa9497c4c41bfde6cbc7e920d5b3e263a1cc0cc`), and official [M5Stack M5-ADS1115 reference driver](https://github.com/m5stack/M5-ADS1115) commit `129349489310a96feed15f9d922081aa641c62f9`. The M5Stack sources control board range, divider, sign, and EEPROM format; TI controls ADS1115 behavior. See `schema.yml`.
+
 ## 1. Purpose
 
 This document is a self-contained firmware implementation reference for the M5Stack Unit VMeter module. It is intended to enable automatic generation of firmware drivers, HAL layers, BSP support, I2C communication code, and automated tests without requiring the original source documents.
@@ -10,7 +14,7 @@ This specification covers the complete software-visible behavior of the Unit VMe
 * Chipanalog CA-IS3020S isolated bidirectional I2C isolator  
 * Board EEPROM at I2C address `0x53` containing factory calibration data; this EEPROM must not be written by firmware because calibration would be overwritten 
 
-Where board-level behavior is published but exact EEPROM field definitions are not provided, this document states that explicitly.
+The board calibration format below is implementation evidence from M5Stack's reference driver; it is not part of the ADS1115 datasheet.
 
 ---
 
@@ -44,7 +48,7 @@ Relevant internal subsystems:
   * `2.5 V` bias network
   * ADS1115 channel use shown as `AIN0` and `AIN1`
 
-The exact EEPROM field layout and the exact board transfer formula are not published in the provided materials. Firmware must therefore treat calibration decoding as board-specific and unknown unless obtained from a known-good reference implementation.
+M5Stack's reference driver confirms a divider coefficient of `0.015918958`, negative measurement direction, and one eight-byte calibration block per PGA setting beginning at EEPROM offset `0xD0 + gain * 8`.
 
 ---
 
@@ -225,10 +229,17 @@ For VMeter address `0x49`, use:
 
 ## 5.5 EEPROM Access
 
-Board docs only state that calibration parameters are stored in EEPROM at `0x53` and must not be written. The exact memory map, address width, page size, and data encoding are not provided in the supplied materials. Firmware must therefore:
+M5Stack's reference driver reads one eight-byte block at `0xD0 + gain * 8`:
 
-* either use a known external EEPROM driver configured per a confirmed part number, or
-* avoid direct EEPROM decoding until the actual EEPROM type and format are known.
+| Byte | Meaning |
+|---:|---|
+| 0 | PGA gain tag (`0..5`) |
+| 1..2 | signed big-endian expected (`hope`) code |
+| 3..4 | signed big-endian measured (`actual`) code |
+| 5 | XOR of bytes 0..4 |
+| 6..7 | reserved by the reference format |
+
+The gain factor is `abs(hope / actual)`. Reject checksum, gain-tag, or zero-value failures. The official product warning remains controlling: **never write this EEPROM in normal firmware**.
 
 ---
 
@@ -251,7 +262,7 @@ None. This device is not register-programmed. It is a transparent hardware isola
 
 ## 6.3 EEPROM Register Map
 
-Not published in the provided materials.
+See section 5.5 for the read-only board calibration block layout corroborated by M5Stack's reference driver.
 
 ---
 
@@ -515,13 +526,16 @@ Published board-level accuracy:
 
 * `1% of full scale, ±1 digit` 
 
-### Important limitation
+### Board conversion
 
-The exact formula converting raw ADS1115 code to external measured voltage is not fully specified in the provided materials because the EEPROM calibration layout is not documented. Therefore:
+The official reference implementation uses:
 
-* raw ADC conversion must be supported
-* calibrated board voltage requires EEPROM-decoding knowledge not present here
-* production-quality VMeter voltage output should be implemented only when EEPROM field mapping is known or a reference driver is available
+```text
+external_mV = raw_code * ADS1115_mV_per_LSB / 0.015918958
+              * abs(hope / actual) * -1
+```
+
+The `-1` corrects the board's differential measurement direction. This formula does not extend the product rating: clamp or reject values outside the published `±36 V` module range.
 
 ---
 
@@ -688,7 +702,7 @@ Software should detect and report:
 * timeout waiting for `OS = 1`
 * suspicious all-zero conversions after initialization
 * raw code saturation near `0x7FFF` or `0x8000`
-* unavailable calibration decode support
+* invalid calibration checksum, gain tag, or zero calibration value
 
 ---
 
@@ -750,11 +764,9 @@ The VMeter module documentation does not expose an interrupt pin on PORT.A, so n
 ## 16.3 Board-Calibrated Voltage Read
 
 1. Read raw ADC sample
-2. Read factory calibration from EEPROM `0x53`
-3. Apply board-specific gain/offset transfer function
+2. Read and validate the active gain's block from EEPROM `0x53`
+3. Apply the divider, absolute gain factor, and sign correction from section 10.3
 4. Clamp/report range `±36 V`
-
-Because EEPROM layout is not published, step 2 and 3 require additional confirmed board knowledge.
 
 ---
 
@@ -771,7 +783,7 @@ Recommended startup sequence:
    * pointer = Config register
    * comparator disabled (`COMP_QUE = 11`)
    * desired `MUX`, `PGA`, `MODE`, `DR`
-6. If calibration support exists, probe EEPROM at `0x53` and read calibration data.
+6. Probe EEPROM at `0x53` and validate the active gain's calibration block.
 7. Trigger one dummy conversion in single-shot mode.
 8. Wait `1 / DR`.
 9. Read conversion register and verify non-bus-fault behavior.
@@ -785,7 +797,7 @@ Recommended default raw configuration for conservative operation:
 * `DR = 100` (`128 SPS`)
 * comparator disabled
 
-Note: the exact board-required `MUX` and `PGA` for final calibrated VMeter readings are not fully published.
+The board uses differential AIN0-AIN1. M5Stack examples use `PGA = ±0.512 V` for measurements up to 16 V; choose gain from board-level range requirements and never exceed the module's ±36 V rating.
 
 ---
 
@@ -805,7 +817,7 @@ Note: the exact board-required `MUX` and `PGA` for final calibrated VMeter readi
 6. Sign-extend to `int16_t`.
 7. Convert to volts at ADC input:
    `vin_adc = code * FSR / 32768`
-8. If supported, apply calibration to produce board voltage.
+8. Apply the active EEPROM calibration and board transfer formula.
 
 ## 18.2 Read Stream, Continuous
 
@@ -871,13 +883,13 @@ Driver should track at minimum:
 7. Wait at least one full conversion period after starting a single-shot conversion.
 8. After changing `MUX`, `PGA`, or `MODE`, discard stale assumptions and wait for a fresh completed conversion.
 9. Update threshold registers whenever `PGA` changes if comparator is enabled.
-10. Do not assume EEPROM format unless confirmed.
-11. Do not claim calibrated board voltage accuracy unless factory calibration decoding is implemented correctly.
+10. Validate the documented EEPROM block before using its gain factor.
+11. Do not claim calibrated board voltage accuracy when calibration is unavailable or invalid.
 12. Clamp or flag values outside published board range `±36 V`.
 13. Handle NACK and conversion timeout paths explicitly.
 14. Do not use ADS1115 high-speed I2C mode above the isolator limit.
 15. Do not assume ALERT/RDY is externally accessible on this module.
-16. Do not apply formulas based only on resistor values from the graphic unless validated against calibration data.
+16. Apply both the confirmed divider coefficient and the matching EEPROM calibration factor.
 
 ---
 
@@ -1036,8 +1048,8 @@ A minimally correct VMeter driver must provide:
 10. Configuration of `MUX`, `PGA`, `MODE`, and `DR`
 
 A fully correct board-level voltage driver additionally requires:
-11. Confirmed EEPROM format decoding
-12. Confirmed raw-to-board-voltage transfer function
+11. EEPROM block validation and per-gain calibration
+12. Confirmed divider and sign correction
 13. Enforcement of board range `±36 V`
 
 ---
@@ -1055,7 +1067,5 @@ Common mistakes to avoid:
 * forgetting to set the pointer register before reads
 * changing PGA without updating threshold interpretation
 * assuming comparator or ALERT/RDY are always physically usable
-* inventing EEPROM calibration structure not documented in source data
-* deriving final board voltage only from resistor values and ignoring calibration storage
-
-If you want, I can turn this into a reusable generic prompt template for future peripheral-to-firmware-spec extraction.
+* accepting calibration with a bad checksum, wrong gain tag, or zero divisor
+* deriving final board voltage from the divider while ignoring calibration storage

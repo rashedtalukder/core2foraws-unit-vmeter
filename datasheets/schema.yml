@@ -1,0 +1,29 @@
+schema_version: "1.0"
+device:
+  name: "M5Stack Unit VMeter"
+  sku: "U087"
+  scope: "Isolated voltage-measurement board, not a bare ADS1115"
+
+source_evidence:
+  verified_on: "2026-08-01"
+  official_product_page: "https://docs.m5stack.com/en/unit/vmeter"
+  board_schematic: "https://static-cdn.m5stack.com/resource/docs/products/unit/vmeter/vmeter_sch_01.webp"
+  ads1115_datasheet:
+    file: "ADS1115-datasheet.pdf"
+    sha256: "62661b1409e83995a9f696305aa9497c4c41bfde6cbc7e920d5b3e263a1cc0cc"
+    official_url: "https://www.ti.com/product/ADS1115"
+  board_reference_driver:
+    repository: "https://github.com/m5stack/M5-ADS1115"
+    commit_reviewed: "129349489310a96feed15f9d922081aa641c62f9"
+  isolator_datasheet: "https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/docs/datasheet/unit/CA-IS3020S.pdf"
+  precedence:
+    - "Use the product page for the +/-36 V module limit, isolation rating, accuracy, and EEPROM warning."
+    - "Use the M5Stack reference driver for the divider ratio, gain calibration layout, checksum, and sign convention."
+    - "Use the TI PDF for ADS1115 register, conversion, and timing behavior."
+
+interface:
+  type: "I2C"
+  devices:
+    - { name: "ADS1115", address_7bit: 0x49 }
+    - { name: "factory calibration EEPROM", address_7bit: 0x53, write_allowed: false }
+  module_range_volts: [-36, 36]

@@ -27,6 +27,7 @@
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <math.h>
 #include <string.h>
 
 #ifdef CONFIG_UNIT_VMETER_USE_PAHUB
@@ -76,6 +77,20 @@ static unit_vmeter_config_t vmeter_config = { .gain = UNIT_VMETER_GAIN_2048MV,
 static bool vmeter_initialized = false;
 static i2c_master_dev_handle_t _ads1115_dev = NULL;
 static i2c_master_dev_handle_t _eeprom_dev = NULL;
+
+static void vmeter_release_devices( void )
+{
+  if( _eeprom_dev != NULL )
+  {
+    core2foraws_expports_i2c_device_remove( _eeprom_dev );
+    _eeprom_dev = NULL;
+  }
+  if( _ads1115_dev != NULL )
+  {
+    core2foraws_expports_i2c_device_remove( _ads1115_dev );
+    _ads1115_dev = NULL;
+  }
+}
 
 static esp_err_t vmeter_read_register( uint8_t reg, uint16_t *value )
 {
@@ -129,6 +144,9 @@ static float vmeter_get_resolution( unit_vmeter_gain_t gain )
 
 static esp_err_t vmeter_load_calibration_for_gain( unit_vmeter_gain_t gain )
 {
+  vmeter_config.calibration_factor = 1.0f;
+  vmeter_config.calibration_loaded = false;
+
   uint8_t cal_addr = GAIN_CAL_ADDRESSES[ gain ];
   uint8_t buffer[ 8 ] = { 0 };
 
@@ -149,25 +167,30 @@ static esp_err_t vmeter_load_calibration_for_gain( unit_vmeter_gain_t gain )
   if( checksum != buffer[ 5 ] )
   {
     ESP_LOGW( TAG, "Calibration checksum mismatch for gain %d", gain );
-    vmeter_config.calibration_factor = 1.0f;
     return ESP_ERR_INVALID_CRC;
+  }
+
+  if( buffer[ 0 ] != (uint8_t)gain )
+  {
+    ESP_LOGW( TAG, "Calibration gain tag mismatch for gain %d", gain );
+    return ESP_ERR_INVALID_RESPONSE;
   }
 
   // Extract calibration values
   int16_t hope = ( buffer[ 1 ] << 8 ) | buffer[ 2 ];
   int16_t actual = ( buffer[ 3 ] << 8 ) | buffer[ 4 ];
 
-  if( actual != 0 )
+  if( hope != 0 && actual != 0 )
   {
-    vmeter_config.calibration_factor = (float)hope / actual;
+    vmeter_config.calibration_factor = fabsf( (float)hope / actual );
     vmeter_config.calibration_loaded = true;
     ESP_LOGI( TAG, "Loaded calibration: hope=%d, actual=%d, factor=%.4f", hope,
               actual, vmeter_config.calibration_factor );
   }
   else
   {
-    vmeter_config.calibration_factor = 1.0f;
-    ESP_LOGW( TAG, "Invalid calibration data (actual=0)" );
+    ESP_LOGW( TAG, "Invalid zero calibration value" );
+    return ESP_ERR_INVALID_RESPONSE;
   }
 
   return ESP_OK;
@@ -215,6 +238,7 @@ esp_err_t unit_vmeter_init( unit_vmeter_mode_t mode )
   if( err != ESP_OK )
   {
     ESP_LOGE( TAG, "Failed to add EEPROM I2C device: %s", esp_err_to_name( err ) );
+    vmeter_release_devices();
     return err;
   }
 
@@ -235,6 +259,7 @@ esp_err_t unit_vmeter_init( unit_vmeter_mode_t mode )
   if( err != ESP_OK )
   {
     ESP_LOGE( TAG, "Failed to configure ADS1115: %s", esp_err_to_name( err ) );
+    vmeter_release_devices();
     return err;
   }
 
@@ -284,7 +309,7 @@ esp_err_t unit_vmeter_set_gain( unit_vmeter_gain_t gain )
   {
     vmeter_config.gain = gain;
     // Reload calibration for new gain
-    vmeter_load_calibration_for_gain( gain );
+    err = vmeter_load_calibration_for_gain( gain );
   }
 
   return err;
@@ -365,14 +390,14 @@ bool unit_vmeter_is_converting( void )
 {
   if( !vmeter_initialized )
   {
-    return false;
+    return true;
   }
 
   uint16_t config;
   esp_err_t err = vmeter_read_register( ADS1115_REG_CONFIG, &config );
   if( err != ESP_OK )
   {
-    return false;
+    return true;
   }
 
   // Bit 15: 0 = converting, 1 = not converting
