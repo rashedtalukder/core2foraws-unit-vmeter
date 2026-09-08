@@ -230,6 +230,10 @@ extern "C"
    */
   esp_err_t unit_vmeter_load_calibration( void );
 
+  esp_err_t unit_vmeter_conversion_ready( bool *ready );
+  esp_err_t unit_vmeter_get_config( unit_vmeter_config_t *config );
+  esp_err_t unit_vmeter_deinit( void );
+
 #ifdef __cplusplus
 }
 #endif

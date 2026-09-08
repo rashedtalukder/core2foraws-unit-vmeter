@@ -77,19 +77,35 @@ static unit_vmeter_config_t vmeter_config = { .gain = UNIT_VMETER_GAIN_2048MV,
 static bool vmeter_initialized = false;
 static i2c_master_dev_handle_t _ads1115_dev = NULL;
 static i2c_master_dev_handle_t _eeprom_dev = NULL;
+static bool sample_valid = false;
+static TickType_t config_changed_at;
+static TickType_t settling_ticks;
 
-static void vmeter_release_devices( void )
+static void vmeter_invalidate_sample( unit_vmeter_rate_t previous_rate )
+{
+  static const uint16_t rates[] = { 8, 16, 32, 64, 128, 250, 475, 860 };
+  uint32_t previous_ms = (10000u + 9u * rates[previous_rate] - 1u) / (9u * rates[previous_rate]);
+  uint32_t next_ms = (10000u + 9u * rates[vmeter_config.rate] - 1u) / (9u * rates[vmeter_config.rate]);
+  settling_ticks = pdMS_TO_TICKS( previous_ms + next_ms + portTICK_PERIOD_MS ) + 1;
+  config_changed_at = xTaskGetTickCount();
+  sample_valid = vmeter_config.mode == UNIT_VMETER_MODE_CONTINUOUS;
+}
+
+static esp_err_t vmeter_release_devices( void )
 {
   if( _eeprom_dev != NULL )
   {
-    core2foraws_expports_i2c_device_remove( _eeprom_dev );
+    esp_err_t err = core2foraws_expports_i2c_device_remove( _eeprom_dev );
+    if( err != ESP_OK ) return err;
     _eeprom_dev = NULL;
   }
   if( _ads1115_dev != NULL )
   {
-    core2foraws_expports_i2c_device_remove( _ads1115_dev );
+    esp_err_t err = core2foraws_expports_i2c_device_remove( _ads1115_dev );
+    if( err != ESP_OK ) return err;
     _ads1115_dev = NULL;
   }
+  return ESP_OK;
 }
 
 static esp_err_t vmeter_read_register( uint8_t reg, uint16_t *value )
@@ -209,7 +225,8 @@ esp_err_t unit_vmeter_init( unit_vmeter_mode_t mode )
     return ESP_ERR_INVALID_ARG;
   }
 
-  esp_err_t err;
+  esp_err_t err = vmeter_release_devices();
+  if( err != ESP_OK ) return err;
 
 #ifdef CONFIG_UNIT_VMETER_USE_PAHUB
   err = unit_pahub_init();
@@ -248,7 +265,6 @@ esp_err_t unit_vmeter_init( unit_vmeter_mode_t mode )
   // Build the ADS1115 config register value.
   // See datasheet section 7.3 for the bit layout.
   uint16_t config =
-      ADS1115_CONFIG_OS_BIT |                           // Start a conversion
       ( 0x00 << ADS1115_CONFIG_MUX_SHIFT ) |            // MUX: AIN0-AIN1 differential
       ( vmeter_config.gain << ADS1115_CONFIG_PGA_SHIFT ) |
       ( vmeter_config.mode << ADS1115_CONFIG_MODE_SHIFT ) |
@@ -270,6 +286,7 @@ esp_err_t unit_vmeter_init( unit_vmeter_mode_t mode )
     ESP_LOGW( TAG, "Using default calibration" );
   }
 
+  vmeter_invalidate_sample( vmeter_config.rate );
   vmeter_initialized = true;
   ESP_LOGI( TAG, "VMeter initialized successfully" );
 
@@ -283,7 +300,7 @@ esp_err_t unit_vmeter_set_gain( unit_vmeter_gain_t gain )
     return ESP_ERR_INVALID_STATE;
   }
 
-  if( gain >= UNIT_VMETER_GAIN_COUNT )
+  if( (unsigned)gain >= UNIT_VMETER_GAIN_COUNT )
   {
     return ESP_ERR_INVALID_ARG;
   }
@@ -308,6 +325,7 @@ esp_err_t unit_vmeter_set_gain( unit_vmeter_gain_t gain )
   if( err == ESP_OK )
   {
     vmeter_config.gain = gain;
+    vmeter_invalidate_sample( vmeter_config.rate );
     // Reload calibration for new gain
     err = vmeter_load_calibration_for_gain( gain );
   }
@@ -322,7 +340,7 @@ esp_err_t unit_vmeter_set_rate( unit_vmeter_rate_t rate )
     return ESP_ERR_INVALID_STATE;
   }
 
-  if( rate >= UNIT_VMETER_RATE_COUNT )
+  if( (unsigned)rate >= UNIT_VMETER_RATE_COUNT )
   {
     return ESP_ERR_INVALID_ARG;
   }
@@ -344,7 +362,9 @@ esp_err_t unit_vmeter_set_rate( unit_vmeter_rate_t rate )
   err = vmeter_write_register( ADS1115_REG_CONFIG, config );
   if( err == ESP_OK )
   {
+    unit_vmeter_rate_t previous_rate = vmeter_config.rate;
     vmeter_config.rate = rate;
+    vmeter_invalidate_sample( previous_rate );
   }
 
   return err;
@@ -381,27 +401,31 @@ esp_err_t unit_vmeter_set_mode( unit_vmeter_mode_t mode )
   if( err == ESP_OK )
   {
     vmeter_config.mode = mode;
+    vmeter_invalidate_sample( vmeter_config.rate );
   }
 
   return err;
 }
 
-bool unit_vmeter_is_converting( void )
+esp_err_t unit_vmeter_conversion_ready( bool *ready )
 {
-  if( !vmeter_initialized )
-  {
-    return true;
-  }
-
+  if( ready == NULL ) return ESP_ERR_INVALID_ARG;
+  if( !vmeter_initialized ) return ESP_ERR_INVALID_STATE;
+  *ready = false;
   uint16_t config;
   esp_err_t err = vmeter_read_register( ADS1115_REG_CONFIG, &config );
-  if( err != ESP_OK )
-  {
-    return true;
-  }
+  if( err != ESP_OK ) return err;
+  if( !sample_valid || (TickType_t)(xTaskGetTickCount() - config_changed_at) < settling_ticks )
+    return ESP_OK;
+  *ready = vmeter_config.mode == UNIT_VMETER_MODE_CONTINUOUS ||
+           (config & ADS1115_CONFIG_OS_BIT) != 0;
+  return ESP_OK;
+}
 
-  // Bit 15: 0 = converting, 1 = not converting
-  return ( config & ADS1115_CONFIG_OS_BIT ) == 0;
+bool unit_vmeter_is_converting( void )
+{
+  bool ready = false;
+  return unit_vmeter_conversion_ready( &ready ) != ESP_OK || !ready;
 }
 
 esp_err_t unit_vmeter_start_conversion( void )
@@ -424,9 +448,17 @@ esp_err_t unit_vmeter_start_conversion( void )
   }
 
   // Set OS bit to start a single conversion
+  if( !(config & ADS1115_CONFIG_OS_BIT) ) return ESP_ERR_NOT_FINISHED;
   config |= ADS1115_CONFIG_OS_BIT;
 
-  return vmeter_write_register( ADS1115_REG_CONFIG, config );
+  err = vmeter_write_register( ADS1115_REG_CONFIG, config );
+  sample_valid = err == ESP_OK;
+  if( err == ESP_OK )
+  {
+    config_changed_at = xTaskGetTickCount();
+    settling_ticks = 1;
+  }
+  return err;
 }
 
 esp_err_t unit_vmeter_raw_reading_get( int16_t *raw_value )
@@ -441,16 +473,12 @@ esp_err_t unit_vmeter_raw_reading_get( int16_t *raw_value )
     return ESP_ERR_INVALID_STATE;
   }
 
-  if( vmeter_config.mode == UNIT_VMETER_MODE_SINGLESHOT )
-  {
-    if( unit_vmeter_is_converting() )
-    {
-      return ESP_ERR_NOT_FINISHED;
-    }
-  }
-
+  bool ready;
+  esp_err_t err = unit_vmeter_conversion_ready( &ready );
+  if( err != ESP_OK ) return err;
+  if( !ready ) return ESP_ERR_NOT_FINISHED;
   uint16_t conversion;
-  esp_err_t err = vmeter_read_register( ADS1115_REG_CONVERSION, &conversion );
+  err = vmeter_read_register( ADS1115_REG_CONVERSION, &conversion );
   if( err == ESP_OK )
   {
     *raw_value = (int16_t)conversion;
@@ -479,8 +507,12 @@ esp_err_t unit_vmeter_reading_get( float *voltage )
   }
 
   float resolution = vmeter_get_resolution( vmeter_config.gain );
-  *voltage = resolution * vmeter_config.calibration_factor * raw_value *
-             VMETER_SIGN_CORRECTION;
+  float measured = resolution * vmeter_config.calibration_factor * raw_value *
+                   VMETER_SIGN_CORRECTION;
+  if( raw_value == INT16_MIN || raw_value == INT16_MAX ||
+      !isfinite(measured) || fabsf(measured) > 36000.0f )
+    return ESP_ERR_INVALID_RESPONSE;
+  *voltage = measured;
 
   return ESP_OK;
 }
@@ -493,4 +525,28 @@ esp_err_t unit_vmeter_load_calibration( void )
   }
 
   return vmeter_load_calibration_for_gain( vmeter_config.gain );
+}
+
+esp_err_t unit_vmeter_get_config( unit_vmeter_config_t *config )
+{
+  if( config == NULL ) return ESP_ERR_INVALID_ARG;
+  if( !vmeter_initialized ) return ESP_ERR_INVALID_STATE;
+  *config = vmeter_config;
+  return ESP_OK;
+}
+
+esp_err_t unit_vmeter_deinit( void )
+{
+  if( _ads1115_dev != NULL )
+  {
+    uint16_t config;
+    esp_err_t err = vmeter_read_register( ADS1115_REG_CONFIG, &config );
+    if( err != ESP_OK ) return err;
+    config = (config & ~ADS1115_CONFIG_OS_BIT) | ADS1115_CONFIG_MODE_MASK;
+    err = vmeter_write_register( ADS1115_REG_CONFIG, config );
+    if( err != ESP_OK ) return err;
+  }
+  sample_valid = false;
+  vmeter_initialized = false;
+  return vmeter_release_devices();
 }

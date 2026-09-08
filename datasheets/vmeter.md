@@ -1,5 +1,38 @@
 # Unit VMeter Firmware Driver Implementation Specification
 
+## 2026-09-08 Driver Coverage
+
+Rechecked TI revision D register bitfields, conversion sequencing and rate
+tolerance, plus M5Stack's board range and EEPROM warning. The component
+supports six distinct gains, all eight data rates, single-shot/continuous
+modes, raw and calibrated readings, calibration reload, configuration
+inspection, explicit readiness and teardown. It keeps `AIN0-AIN1` fixed:
+other mux inputs and ALERT/RDY are not accessible at the board connector.
+PGA encodings 6/7 alias gain 5 and have no separate factory calibration block.
+Comparator/threshold/ready-pin features below describe the chip, not a
+usable external interrupt feature of this unmodified board.
+
+Single-shot init/configuration leaves acquisition invalid until an explicit
+`unit_vmeter_start_conversion()`. Starting while busy returns
+`ESP_ERR_NOT_FINISHED`. `unit_vmeter_conversion_ready()` distinguishes bus
+errors from busy; the legacy boolean helper conservatively returns busy on
+error. Configuration changes invalidate old samples. In continuous mode,
+wait for the old conversion plus the first new conversion, using the -10%
+data-rate tolerance and a tick-phase margin. No acquisition task is blocked
+inside a read while this interval elapses.
+
+Readings are external millivolts, not volts. Calibrated reads reject ADC
+saturation/non-finite results/outside +/-36000 mV without changing output.
+Raw reads remain available for diagnostics; software cannot prevent physical
+overvoltage. `get_config()` exposes calibration availability. A gain-setting
+calibration error occurs after the gain was applied, with unity fallback;
+do not interpret that error as an unchanged gain. EEPROM is always read-only.
+
+Use a single owning task or serialize all VMeter calls externally, including
+start/wait/read and gain changes. Deinit requests power-down and retains
+failed removals for retry. Converter accuracy and isolation need physical
+tests; sanitizer tests do not establish either.
+
 ## Source Evidence and Precedence
 
 Verified on 2026-08-01 against the official [M5Stack Unit VMeter page](https://docs.m5stack.com/en/unit/vmeter), board schematic, checked-in TI `ADS1115-datasheet.pdf` (SHA-256 `62661b1409e83995a9f696305aa9497c4c41bfde6cbc7e920d5b3e263a1cc0cc`), and official [M5Stack M5-ADS1115 reference driver](https://github.com/m5stack/M5-ADS1115) commit `129349489310a96feed15f9d922081aa641c62f9`. The M5Stack sources control board range, divider, sign, and EEPROM format; TI controls ADS1115 behavior. See `schema.yml`.
@@ -825,7 +858,9 @@ The board uses differential AIN0-AIN1. M5Stack examples use `PGA = ±0.512 V` fo
 2. Set pointer to Conversion register once.
 3. Periodically read 2 bytes.
 4. Convert using current FSR.
-5. If changing FSR or MUX, rewrite Config and allow one full conversion period for fresh settled data.
+5. When changing FSR, MUX or rate, allow the ongoing old-configuration conversion
+  to finish and then one new-configuration conversion. Use each rate's worst
+  case `1 / (0.9 * DR)`, not one nominal new-rate period (TI section 9.4.2.2).
 
 ## 18.3 Configure Conversion-Ready Mode
 
