@@ -1,0 +1,155 @@
+schema_version: "1.0"
+device:
+  name: "M5Stack Unit VMeter"
+  sku: "U087"
+  scope: "Isolated voltage-measurement board, not a bare ADS1115"
+
+source_evidence:
+  verified_on: "2026-08-01"
+  official_product_page: "https://docs.m5stack.com/en/unit/vmeter"
+  board_schematic: "https://static-cdn.m5stack.com/resource/docs/products/unit/vmeter/vmeter_sch_01.webp"
+  ads1115_datasheet:
+    file: "ADS1115-datasheet.pdf"
+    revision: "TI SBAS444D, May 2009, revised January 2018"
+    verified_on: "2026-09-26"
+    sha256: "62661b1409e83995a9f696305aa9497c4c41bfde6cbc7e920d5b3e263a1cc0cc"
+    official_url: "https://www.ti.com/product/ADS1115"
+  board_reference_driver:
+    repository: "https://github.com/m5stack/M5-ADS1115"
+    commit_reviewed: "129349489310a96feed15f9d922081aa641c62f9"
+  isolator_datasheet: "https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/docs/datasheet/unit/CA-IS3020S.pdf"
+  precedence:
+    - "Use the product page for the +/-36 V module limit, isolation rating, accuracy, and EEPROM warning."
+    - "Use the M5Stack reference driver for the divider ratio, gain calibration layout, checksum, and sign convention."
+    - "Use the TI PDF for ADS1115 register, conversion, and timing behavior."
+
+interface:
+  type: "I2C"
+  devices:
+    - { name: "ADS1115", address_7bit: 0x49 }
+    - { name: "factory calibration EEPROM", address_7bit: 0x53, write_allowed: false }
+  module_range_volts: [-36, 36]
+  board_max_scl_hz: 1000000 # CA-IS3020S path limit; below ADS1115 Hs-mode 3.4 MHz
+
+# Chip-level facts from ADS1115-datasheet.pdf (SBAS444D). Board-specific use is under board_usage.
+ads1115:
+  supply_volts: { min: 2.0, max: 5.5, abs_max: 7.0 }
+  addr_pin_to_address_7bit: { GND: 0x48, VDD: 0x49, SDA: 0x4A, SCL: 0x4B }
+  addr_pin_notes:
+    - "ADDR is sampled continuously; the board's fixed 0x49 corresponds to ADDR tied to VDD."
+    - "If ADDR is tied to SDA, hold SDA low for at least 100 ns after SCL falls."
+
+  i2c:
+    role: "slave only; never drives SCL; no clock stretching"
+    speed_modes_hz: { standard: 100000, fast: 400000, high_speed: 3400000 }
+    min_scl_hz: 10000
+    hs_master_code: "0b00001xxx; not acknowledged; Hs mode ends at the next STOP"
+    bus_idle_timeout_ms: 25
+    general_call_reset: { address_byte: 0x00, data_byte: 0x06, effect: "reset registers, enter power-down" }
+    smbus_alert_response_byte: 0x19 # 0b00011001
+    byte_order: "MSB first"
+    pointer_persists: true
+    timing_ns: # Timing Requirements: I2C, VDD 2.0-5.5 V
+      fast: { tBUF_min: 600, tHDSTA_min: 600, tSUSTA_min: 600, tSUSTO_min: 600, tHDDAT_min: 0, tSUDAT_min: 100, tLOW_min: 1300, tHIGH_min: 600, tR_max: 300, tF_max: 300 }
+      high_speed: { tBUF_min: 160, tHDSTA_min: 160, tSUSTA_min: 160, tSUSTO_min: 160, tHDDAT_min: 0, tSUDAT_min: 10, tLOW_min: 160, tHIGH_min: 60, tR_max: 160, tF_max: 160 }
+    hs_mode_max_bus_capacitance_pf: 400
+
+  address_pointer_register:
+    reserved_bits: { bits: "7:2", write_value: 0 }
+    p_bits: { bits: "1:0", values: { 0: "conversion", 1: "config", 2: "lo_thresh", 3: "hi_thresh" } }
+
+  registers:
+    - { name: "conversion", pointer: 0x00, access: "R", reset: 0x0000, format: "int16 two's complement" }
+    - { name: "config", pointer: 0x01, access: "R/W", reset: 0x8583 }
+    - { name: "lo_thresh", pointer: 0x02, access: "R/W", reset: 0x8000, format: "int16 two's complement" }
+    - { name: "hi_thresh", pointer: 0x03, access: "R/W", reset: 0x7FFF, format: "int16 two's complement" }
+
+  config_fields:
+    os:
+      bits: "15"
+      reset: 1
+      write: { 0: "no effect", 1: "start single conversion (power-down state only)" }
+      read: { 0: "conversion in progress", 1: "not converting" }
+      notes: "Writable only in power-down; writing 1 during a conversion has no effect."
+    mux:
+      bits: "14:12"
+      reset: 0
+      values: { 0: "AIN0-AIN1", 1: "AIN0-AIN3", 2: "AIN1-AIN3", 3: "AIN2-AIN3", 4: "AIN0-GND", 5: "AIN1-GND", 6: "AIN2-GND", 7: "AIN3-GND" }
+    pga:
+      bits: "11:9"
+      reset: 2
+      fsr_volts: { 0: 6.144, 1: 4.096, 2: 2.048, 3: 1.024, 4: 0.512, 5: 0.256, 6: 0.256, 7: 0.256 }
+      lsb_microvolts: { 0: 187.5, 1: 125.0, 2: 62.5, 3: 31.25, 4: 15.625, 5: 7.8125, 6: 7.8125, 7: 7.8125 }
+      notes: "LSB = FSR / 2^15 (full span 2*FSR / 2^16). Full-scale codes are unreachable when FSR exceeds VDD."
+    mode:
+      bits: "8"
+      reset: 1
+      values: { 0: "continuous conversion", 1: "single-shot / power-down" }
+    dr:
+      bits: "7:5"
+      reset: 4
+      sps: { 0: 8, 1: 16, 2: 32, 3: 64, 4: 128, 5: 250, 6: 475, 7: 860 }
+    comp_mode:
+      bits: "4"
+      reset: 0
+      values: { 0: "traditional", 1: "window" }
+    comp_pol:
+      bits: "3"
+      reset: 0
+      values: { 0: "active low", 1: "active high" }
+    comp_lat:
+      bits: "2"
+      reset: 0
+      values: { 0: "nonlatching", 1: "latching until Conversion read or SMBus alert response" }
+    comp_que:
+      bits: "1:0"
+      reset: 3
+      values: { 0: "assert after 1 conversion", 1: "assert after 2 conversions", 2: "assert after 4 conversions", 3: "comparator disabled, ALERT/RDY high impedance" }
+
+  comparator:
+    thresholds: "Digital compare in ADC codes; rewrite after any PGA change. Hi_thresh must exceed Lo_thresh."
+    traditional: "Asserts above Hi_thresh; deasserts only below Lo_thresh."
+    window: "Asserts above Hi_thresh or below Lo_thresh."
+    conversion_ready_mode: "Hi_thresh MSB = 1, Lo_thresh MSB = 0, COMP_QUE != 3; COMP_MODE/COMP_LAT ignored."
+    conversion_ready_output: "Continuous: ~8 us pulse per conversion. Single-shot: pin follows OS (asserts low at end when COMP_POL = 0)."
+    alert_rdy_pin: "Open drain; needs pullup; pin 2 on the ADS1115."
+    smbus_alert: "Lowest address wins arbitration; repeat until all devices clear. In window mode the status bit is 1 for high, 0 for low threshold."
+
+  data_format:
+    encoding: "16-bit two's complement"
+    positive_full_scale_code: 0x7FFF
+    negative_full_scale_code: 0x8000
+    clipping: "Output clips at 0x7FFF / 0x8000 beyond full scale."
+
+  timing:
+    power_up_before_i2c_us: 50
+    single_shot_wake_us: 25
+    conversion_time: "1 / DR (settles in one cycle)"
+    data_rate_tolerance_percent: 10
+    continuous_reconfig: "The in-progress conversion completes with old settings; new settings apply to the next conversion."
+    oscillator_hz: 1000000
+    modulator_hz: 250000
+
+  electrical: # VDD = 3.3 V, DR = 8 SPS, FSR = +/-2.048 V unless noted
+    analog_input_abs_max_volts: ["GND - 0.3", "VDD + 0.3"]
+    analog_input_operating_volts: ["GND", "VDD"]
+    digital_input_abs_max_volts: ["GND - 0.3", 5.5]
+    input_current_abs_max_ma: 10
+    operating_temperature_c: [-40, 125]
+    esd_volts: { hbm: 2000, cdm: 500 }
+    supply_current_ua:
+      power_down: { typ: 0.5, max_25c: 2, max: 5 }
+      operating: { typ: 150, max_25c: 200, max: 300 }
+    common_mode_input_impedance_mohm: { 6.144: 10, 4.096: 6, 2.048: 6, 1.024: 3, 0.512: 100, 0.256: 100 }
+    differential_input_impedance_mohm: { 6.144: 22, 4.096: 15, 2.048: 4.9, 1.024: 2.4, 0.512: 0.71, 0.256: 0.71 }
+    inl_lsb_max: 1
+    offset_error_lsb: { differential_typ: 1, differential_max: 3, single_ended_typ: 3 }
+    gain_error_percent: { typ: 0.01, max: 0.15 }
+    gain_drift_ppm_per_c: { typ: 5, max: 40 }
+    noise: "At <= 128 SPS, rms noise is one LSB for every FSR (Table 1)."
+    digital_io: { vih_min: "0.7 VDD", vih_max_volts: 5.5, vil_max: "0.3 VDD", vol_max_volts_at_3ma: 0.4, leakage_ua_max: 10 }
+
+  board_usage:
+    mux: "AIN0-AIN1 only (schematic); other inputs are not reachable."
+    alert_rdy: "Not exposed on PORT.A; poll OS. Latched comparator events are readable over I2C via the SMBus alert response."
+    pga_6_7: "Alias 0.256 V; no separate EEPROM calibration block."

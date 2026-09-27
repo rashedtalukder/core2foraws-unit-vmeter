@@ -1,0 +1,45 @@
+menu "Unit VMeter Configuration"
+
+    config UNIT_VMETER_USE_PAHUB
+        bool "Use PA Hub for VMeter Unit"
+        default n
+        help
+            Enable this option if the VMeter Unit is connected through a PA Hub.
+            When enabled, the unit will use PA Hub I2C communication instead of
+            direct Core2 expansion ports.
+
+    config UNIT_VMETER_PAHUB_CHANNEL
+        int "PA Hub Channel for VMeter Unit"
+        depends on UNIT_VMETER_USE_PAHUB
+        range 0 5
+        default 0
+        help
+            PA Hub channel number (0-5) where the VMeter Unit is connected.
+
+    config UNIT_VMETER_I2C_SPEED_HZ
+        int "I2C clock for the VMeter devices (Hz)"
+        range 10000 1000000
+        default 400000
+        help
+            SCL frequency used for the ADS1115, calibration EEPROM and SMBus
+            alert response. The on-board CA-IS3020S isolator limits the bus to
+            1 MHz; lower this for long or heavily loaded cables.
+
+    config UNIT_VMETER_I2C_RETRIES
+        int "Retries after a NACKed transfer"
+        range 0 5
+        default 2
+        help
+            Extra attempts for a transfer that failed with a NACK. Timeouts
+            are not retried.
+
+    config UNIT_VMETER_HEALTH_CHECK_MS
+        int "Continuous-mode configuration check interval (ms)"
+        range 0 60000
+        default 1000
+        help
+            In continuous mode, how often a read also verifies the ADS1115
+            Config register to detect a unit reset or hot-plug. 0 checks on
+            every read. Single-shot mode verifies on every conversion.
+
+endmenu
